@@ -1371,6 +1371,9 @@ function sol_chatbot_assets(): void {
     height: 60px;
     border-radius: 50%;
     background: #FF6B00;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: none;
     cursor: pointer;
     box-shadow: 0 4px 16px rgba(0,0,0,0.25);
@@ -1529,9 +1532,7 @@ function sol_chatbot_assets(): void {
     var btn = document.createElement("button");
     btn.id    = "sol-chat-btn";
     btn.title = "明日架に質問する";
-    btn.innerHTML = AVATAR
-        ? "<img src=\"" + AVATAR + "\" alt=\"明日架\">"
-        : "<span style=\"color:#fff;font-size:26px;\">💬</span>";
+    btn.innerHTML = "<svg viewBox=\"0 0 24 24\" width=\"28\" height=\"28\" fill=\"#fff\"><path d=\"M12 2C6.48 2 2 5.94 2 10.8c0 2.77 1.5 5.23 3.86 6.86-.1.86-.42 2.4-1.16 3.99a.5.5 0 0 0 .64.68c1.9-.78 3.46-1.7 4.36-2.28.73.15 1.49.23 2.3.23 5.52 0 10-3.94 10-8.8S17.52 2 12 2z\"/></svg>";
     document.body.appendChild(btn);
 
     var win = document.createElement("div");
