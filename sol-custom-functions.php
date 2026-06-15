@@ -1771,26 +1771,40 @@ add_filter( 'the_content', 'do_shortcode' );
 
 /**
  * ============================================================
- * 9. ダッシュボード左メニューに「操作説明書」リンクを追加
+ * 9. ダッシュボード左メニューに「操作説明書」を追加
+ *    コンテンツエリアに固定ページの内容を表示
  * ============================================================
  */
+
+// エンドポイント登録
+add_action( 'init', 'sol_register_manual_endpoint' );
+function sol_register_manual_endpoint(): void {
+    add_rewrite_endpoint( 'sol-manual', EP_PAGES );
+}
+
+// タブ追加
 add_filter( 'llms_get_student_dashboard_tabs', 'sol_add_manual_tab' );
-
 function sol_add_manual_tab( array $tabs ): array {
+    $tabs['sol-manual'] = array(
+        'endpoint' => 'sol-manual',
+        'title'    => 'ユーザーマニュアル',
+        'nav_item' => true,
+    );
+    return $tabs;
+}
 
-    // ▼ 操作説明書の固定ページスラッグを指定してください ▼
+// コンテンツ表示（固定ページの内容を読み込み）
+add_action( 'lifterlms_student_dashboard_sol-manual', 'sol_render_manual_content' );
+function sol_render_manual_content(): void {
+    // ▼ ユーザーマニュアルの固定ページスラッグを指定 ▼
     $page_slug = 'user_manual';
 
     $page = get_page_by_path( $page_slug );
-    if ( ! $page ) return $tabs;
-
-    $tabs['sol-manual'] = array(
-        'content'  => '',
-        'endpoint' => false,
-        'title'    => 'ユーザーマニュアル',
-        'url'      => get_permalink( $page->ID ),
-        'nav_item' => true,
-    );
-
-    return $tabs;
+    if ( $page ) {
+        echo '<div class="sol-manual-content">';
+        echo wp_kses_post( apply_filters( 'the_content', $page->post_content ) );
+        echo '</div>';
+    } else {
+        echo '<p>ユーザーマニュアルページが見つかりません。（固定ページスラッグ: ' . esc_html( $page_slug ) . '）</p>';
+    }
 }
