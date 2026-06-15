@@ -14,6 +14,7 @@
  * 6) AIチャットボット「明日架」
  * 7） Scratchチュートリアル iframeショートコード（トークン認証付き）
  * 8) WordPress 7対応：ショートコード強制実行
+ * 9) ダッシュボード左メニューに「操作説明書」リンクを追加
  */
 
 
@@ -1765,3 +1766,31 @@ add_shortcode( 'switchonlab_scratch', 'sol_generate_scratch_iframe' );
 // 8) WordPress 7対応：ショートコード強制実行
 // ============================================================
 add_filter( 'the_content', 'do_shortcode' );
+
+
+
+/**
+ * ============================================================
+ * 9. ダッシュボード左メニューに「操作説明書」リンクを追加
+ * ============================================================
+ */
+add_filter( 'llms_get_student_dashboard_tabs', 'sol_add_manual_tab' );
+
+function sol_add_manual_tab( array $tabs ): array {
+
+    // ▼ 操作説明書の固定ページスラッグを指定してください ▼
+    $page_slug = 'user_manual';
+
+    $page = get_page_by_path( $page_slug );
+    if ( ! $page ) return $tabs;
+
+    $tabs['sol-manual'] = array(
+        'content'  => '',
+        'endpoint' => false,
+        'title'    => 'ユーザーマニュアル',
+        'url'      => get_permalink( $page->ID ),
+        'nav_item' => true,
+    );
+
+    return $tabs;
+}
