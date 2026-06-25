@@ -20,12 +20,12 @@
 
 /**
  * ============================================================
- * 1. 入会時のアンケート＆エクスポート機能
+ * 1. ユーザー情報管理（入会アンケート・最終ログイン・エクスポート）
  * ============================================================
  */
-
+ 
 if ( ! defined( 'ABSPATH' ) ) exit;
-
+ 
 function sol_get_enrollment_source_options(): array {
     return array(
         'threads'    => 'Threadsを見て',
@@ -40,7 +40,7 @@ function sol_get_enrollment_source_options(): array {
         'other'      => 'その他',
     );
 }
-
+ 
 function sol_get_age_group_options(): array {
     return array(
         'under10' => '10代以下',
@@ -52,7 +52,7 @@ function sol_get_age_group_options(): array {
         '60plus'  => '60代以上',
     );
 }
-
+ 
 add_filter( 'lifterlms_get_person_fields', function( $fields ) {
     $source_options = array( '' => '選択してください' ) + sol_get_enrollment_source_options();
     $fields[] = array(
@@ -62,7 +62,7 @@ add_filter( 'lifterlms_get_person_fields', function( $fields ) {
         'required' => true,
         'options'  => $source_options,
     );
-
+ 
     $age_options = array( '' => '選択してください' ) + sol_get_age_group_options();
     $fields[] = array(
         'type'     => 'select',
@@ -71,20 +71,20 @@ add_filter( 'lifterlms_get_person_fields', function( $fields ) {
         'required' => true,
         'options'  => $age_options,
     );
-
+ 
     return $fields;
 } );
-
+ 
 add_action( 'show_user_profile', 'sol_display_enrollment_survey_on_profile' );
 add_action( 'edit_user_profile', 'sol_display_enrollment_survey_on_profile' );
-
+ 
 function sol_display_enrollment_survey_on_profile( WP_User $user ): void {
     if ( ! current_user_can( 'edit_user', $user->ID ) ) return;
-
+ 
     $source         = get_user_meta( $user->ID, 'enrollment_source', true );
     $source_options = sol_get_enrollment_source_options();
     $source_display = $source_options[ $source ] ?? ( $source ?: '未回答' );
-
+ 
     $age_group      = get_user_meta( $user->ID, 'sol_age_group', true );
     $age_options    = sol_get_age_group_options();
     $age_display    = $age_options[ $age_group ] ?? ( $age_group ?: '未回答' );
@@ -129,27 +129,41 @@ function sol_display_enrollment_survey_on_profile( WP_User $user ): void {
                 <p class="description">※新規登録時にユーザーが選択した内容です。保護者が登録した場合はお子さまの年代です。</p>
             </td>
         </tr>
+        <tr>
+            <th>最終ログイン日時</th>
+            <td>
+                <?php
+                $last_login = get_user_meta( $user->ID, 'sol_last_login', true );
+                if ( $last_login ) {
+                    echo '<strong>' . esc_html( date_i18n( 'Y年n月j日 H:i', strtotime( $last_login ) ) ) . '</strong>';
+                } else {
+                    echo '<span style="color:#999;">未記録（この機能追加前のユーザー）</span>';
+                }
+                ?>
+                <p class="description">※最後にログインした日時です。</p>
+            </td>
+        </tr>
     </table>
     <?php
 }
-
+ 
 add_action( 'personal_options_update',  'sol_save_enrollment_survey' );
 add_action( 'edit_user_profile_update', 'sol_save_enrollment_survey' );
-
+ 
 function sol_save_enrollment_survey( int $user_id ): void {
     if (
         ! current_user_can( 'administrator' ) ||
         ! isset( $_POST['sol_enrollment_nonce'] ) ||
         ! wp_verify_nonce( $_POST['sol_enrollment_nonce'], 'sol_save_enrollment_survey_' . $user_id )
     ) return;
-
+ 
     // 入会のきっかけ
     $allowed_sources = array_keys( sol_get_enrollment_source_options() );
     $source_value    = sanitize_text_field( $_POST['enrollment_source'] ?? '' );
     if ( $source_value === '' || in_array( $source_value, $allowed_sources, true ) ) {
         update_user_meta( $user_id, 'enrollment_source', $source_value );
     }
-
+ 
     // 年代
     $allowed_ages = array_keys( sol_get_age_group_options() );
     $age_value    = sanitize_text_field( $_POST['sol_age_group'] ?? '' );
@@ -157,7 +171,7 @@ function sol_save_enrollment_survey( int $user_id ): void {
         update_user_meta( $user_id, 'sol_age_group', $age_value );
     }
 }
-
+ 
 add_action( 'admin_menu', function() {
     add_submenu_page(
         'users.php',
@@ -168,7 +182,7 @@ add_action( 'admin_menu', function() {
         'sol_render_export_page'
     );
 } );
-
+ 
 add_action( 'admin_init', function() {
     if (
         ! isset( $_POST['sol_export_csv'] ) ||
@@ -176,11 +190,11 @@ add_action( 'admin_init', function() {
         ! wp_verify_nonce( $_POST['sol_export_nonce'], 'sol_export_csv_action' ) ||
         ! current_user_can( 'administrator' )
     ) return;
-
+ 
     sol_export_survey_csv();
     exit;
 } );
-
+ 
 function sol_render_export_page(): void {
     ?>
     <div class="wrap">
@@ -193,29 +207,32 @@ function sol_render_export_page(): void {
     </div>
     <?php
 }
-
+ 
 function sol_export_survey_csv(): void {
     $source_options = sol_get_enrollment_source_options();
     $age_options    = sol_get_age_group_options();
     $users          = get_users( array( 'fields' => array( 'ID', 'user_login', 'user_email', 'display_name', 'user_registered' ) ) );
-
+ 
     header( 'Content-Type: text/csv; charset=UTF-8' );
     header( 'Content-Disposition: attachment; filename="enrollment_survey_' . date('Ymd') . '.csv"' );
     header( 'Pragma: no-cache' );
     header( 'Expires: 0' );
-
+ 
     $output = fopen( 'php://output', 'w' );
     fwrite( $output, "\xEF\xBB\xBF" );
-
-    fputcsv( $output, array( 'ユーザーID', 'ユーザー名', 'メールアドレス', '表示名', '登録日', '入会のきっかけ', '年代' ) );
-
+ 
+    fputcsv( $output, array( 'ユーザーID', 'ユーザー名', 'メールアドレス', '表示名', '登録日', '入会のきっかけ', '年代', '最終ログイン日時' ) );
+ 
     foreach ( $users as $user ) {
         $source      = get_user_meta( $user->ID, 'enrollment_source', true );
         $source_disp = $source_options[ $source ] ?? ( $source ? $source : '未回答' );
-
+ 
         $age_group   = get_user_meta( $user->ID, 'sol_age_group', true );
         $age_disp    = $age_options[ $age_group ] ?? ( $age_group ? $age_group : '未回答' );
-
+ 
+        $last_login     = get_user_meta( $user->ID, 'sol_last_login', true );
+        $last_login_fmt = $last_login ? date_i18n( 'Y-m-d H:i', strtotime( $last_login ) ) : '未記録';
+ 
         fputcsv( $output, array(
             $user->ID,
             $user->user_login,
@@ -224,10 +241,20 @@ function sol_export_survey_csv(): void {
             $user->user_registered,
             $source_disp,
             $age_disp,
+            $last_login_fmt,
         ) );
     }
-
+ 
     fclose( $output );
+}
+ 
+/**
+ * 最終ログイン日時の記録
+ */
+add_action( 'wp_login', 'sol_record_last_login', 10, 2 );
+ 
+function sol_record_last_login( string $user_login, WP_User $user ): void {
+    update_user_meta( $user->ID, 'sol_last_login', current_time( 'mysql' ) );
 }
 
 /**
