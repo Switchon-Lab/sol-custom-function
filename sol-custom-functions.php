@@ -14,7 +14,7 @@
  * 6) AIチャットボット「明日架」
  * 7） Scratchチュートリアル iframeショートコード（トークン認証付き）
  * 8) WordPress 7対応：ショートコード強制実行
- * 9) ダッシュボード左メニューに「操作説明書」リンクを追加
+ * 9) ダッシュボード左メニューに「ユーザーマニュアル」リンクを追加
  */
 
 
@@ -53,6 +53,31 @@ function sol_get_age_group_options(): array {
     );
 }
  
+/**
+ * 興味のある分野の選択肢（1番目・2番目の共通マスタ）
+ */
+function sol_get_interest_options(): array {
+    return array(
+        'iot'         => '電子工作',
+        'programming' => 'プログラミング',
+        'game'        => 'ゲーム開発',
+        '3d'          => '3Dモデリング',
+        'ai'          => '生成AI活用',
+        'undecided'   => 'まだ決めていない',
+    );
+}
+ 
+/**
+ * 2番目の興味分野プルダウン用の選択肢
+ * 「まだ決めていない」は2番目には出さず、代わりに「特になし」を用意する
+ */
+function sol_get_interest_secondary_options(): array {
+    $options = sol_get_interest_options();
+    unset( $options['undecided'] );
+    $options['none'] = '特になし';
+    return $options;
+}
+ 
 add_filter( 'lifterlms_get_person_fields', function( $fields ) {
     $source_options = array( '' => '選択してください' ) + sol_get_enrollment_source_options();
     $fields[] = array(
@@ -72,8 +97,70 @@ add_filter( 'lifterlms_get_person_fields', function( $fields ) {
         'options'  => $age_options,
     );
  
+    $interest_primary_options = array( '' => '選択してください' ) + sol_get_interest_options();
+    $fields[] = array(
+        'type'     => 'select',
+        'id'       => 'interest_primary',
+        'label'    => '1番興味のある分野を教えてください',
+        'required' => true,
+        'options'  => $interest_primary_options,
+    );
+ 
+    $interest_secondary_options = array( '' => '選択してください' ) + sol_get_interest_secondary_options();
+    $fields[] = array(
+        'type'     => 'select',
+        'id'       => 'interest_secondary',
+        'label'    => '2番目に興味のある分野があれば教えてください',
+        'required' => false,
+        'options'  => $interest_secondary_options,
+    );
+ 
     return $fields;
 } );
+ 
+/**
+ * 2番目のプルダウンから、1番目で選んだ項目を除外する（登録フォーム/アカウント編集画面）
+ */
+add_action( 'wp_footer', 'sol_interest_dropdown_exclude_js' );
+ 
+function sol_interest_dropdown_exclude_js(): void {
+    ?>
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var primary   = document.getElementById('interest_primary');
+        var secondary = document.getElementById('interest_secondary');
+        if (!primary || !secondary) return;
+ 
+        var originalOptions = Array.prototype.slice.call(secondary.options).map(function (opt) {
+            return { value: opt.value, text: opt.text };
+        });
+ 
+        function syncSecondaryOptions() {
+            var currentValue = secondary.value;
+            var primaryValue = primary.value;
+ 
+            secondary.innerHTML = '';
+            originalOptions.forEach(function (opt) {
+                if (opt.value !== '' && opt.value === primaryValue) return; // 1番目と同じものは除外
+                var optionEl = document.createElement('option');
+                optionEl.value = opt.value;
+                optionEl.text  = opt.text;
+                secondary.appendChild(optionEl);
+            });
+ 
+            // 除外前に選ばれていた値がまだ選べるなら復元、除外されていたら未選択に戻す
+            var stillExists = Array.prototype.some.call(secondary.options, function (opt) {
+                return opt.value === currentValue;
+            });
+            secondary.value = stillExists ? currentValue : '';
+        }
+ 
+        primary.addEventListener('change', syncSecondaryOptions);
+        syncSecondaryOptions();
+    });
+    </script>
+    <?php
+}
  
 add_action( 'show_user_profile', 'sol_display_enrollment_survey_on_profile' );
 add_action( 'edit_user_profile', 'sol_display_enrollment_survey_on_profile' );
@@ -88,6 +175,14 @@ function sol_display_enrollment_survey_on_profile( WP_User $user ): void {
     $age_group      = get_user_meta( $user->ID, 'sol_age_group', true );
     $age_options    = sol_get_age_group_options();
     $age_display    = $age_options[ $age_group ] ?? ( $age_group ?: '未回答' );
+ 
+    $interest_primary_options   = sol_get_interest_options();
+    $interest_primary           = get_user_meta( $user->ID, 'interest_primary', true );
+    $interest_primary_display   = $interest_primary_options[ $interest_primary ] ?? ( $interest_primary ?: '未回答' );
+ 
+    $interest_secondary_options = sol_get_interest_secondary_options();
+    $interest_secondary         = get_user_meta( $user->ID, 'interest_secondary', true );
+    $interest_secondary_display = $interest_secondary_options[ $interest_secondary ] ?? ( $interest_secondary ?: '未回答' );
     ?>
     <hr>
     <h3>スクール入会アンケート結果</h3>
@@ -127,6 +222,42 @@ function sol_display_enrollment_survey_on_profile( WP_User $user ): void {
                     <strong><?php echo esc_html( $age_display ); ?></strong>
                 <?php endif; ?>
                 <p class="description">※新規登録時にユーザーが選択した内容です。保護者が登録した場合はお子さまの年代です。</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="interest_primary">興味のある分野（1番目）</label></th>
+            <td>
+                <?php if ( current_user_can( 'administrator' ) ) : ?>
+                    <select name="interest_primary" id="interest_primary">
+                        <option value="">未回答</option>
+                        <?php foreach ( $interest_primary_options as $value => $label ) : ?>
+                            <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $interest_primary, $value ); ?>>
+                                <?php echo esc_html( $label ); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                <?php else : ?>
+                    <strong><?php echo esc_html( $interest_primary_display ); ?></strong>
+                <?php endif; ?>
+                <p class="description">※新規登録時にユーザーが選択した内容です。</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="interest_secondary">興味のある分野（2番目）</label></th>
+            <td>
+                <?php if ( current_user_can( 'administrator' ) ) : ?>
+                    <select name="interest_secondary" id="interest_secondary">
+                        <option value="">未回答</option>
+                        <?php foreach ( $interest_secondary_options as $value => $label ) : ?>
+                            <option value="<?php echo esc_attr( $value ); ?>" <?php selected( $interest_secondary, $value ); ?>>
+                                <?php echo esc_html( $label ); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                <?php else : ?>
+                    <strong><?php echo esc_html( $interest_secondary_display ); ?></strong>
+                <?php endif; ?>
+                <p class="description">※新規登録時にユーザーが選択した内容です（未回答の場合もあります）。</p>
             </td>
         </tr>
         <tr>
@@ -170,6 +301,20 @@ function sol_save_enrollment_survey( int $user_id ): void {
     if ( $age_value === '' || in_array( $age_value, $allowed_ages, true ) ) {
         update_user_meta( $user_id, 'sol_age_group', $age_value );
     }
+ 
+    // 興味のある分野（1番目）
+    $allowed_interest_primary = array_keys( sol_get_interest_options() );
+    $interest_primary_value   = sanitize_text_field( $_POST['interest_primary'] ?? '' );
+    if ( $interest_primary_value === '' || in_array( $interest_primary_value, $allowed_interest_primary, true ) ) {
+        update_user_meta( $user_id, 'interest_primary', $interest_primary_value );
+    }
+ 
+    // 興味のある分野（2番目）
+    $allowed_interest_secondary = array_keys( sol_get_interest_secondary_options() );
+    $interest_secondary_value   = sanitize_text_field( $_POST['interest_secondary'] ?? '' );
+    if ( $interest_secondary_value === '' || in_array( $interest_secondary_value, $allowed_interest_secondary, true ) ) {
+        update_user_meta( $user_id, 'interest_secondary', $interest_secondary_value );
+    }
 }
  
 add_action( 'admin_menu', function() {
@@ -199,7 +344,7 @@ function sol_render_export_page(): void {
     ?>
     <div class="wrap">
         <h1>入会アンケート結果 CSVエクスポート</h1>
-        <p>全ユーザーの「入会のきっかけ」「年代」アンケート結果をCSVでダウンロードできます。</p>
+        <p>全ユーザーの「入会のきっかけ」「年代」「興味のある分野（1番目・2番目）」アンケート結果をCSVでダウンロードできます。</p>
         <form method="post">
             <?php wp_nonce_field( 'sol_export_csv_action', 'sol_export_nonce' ); ?>
             <input type="submit" name="sol_export_csv" class="button button-primary" value="CSVをダウンロード">
@@ -209,9 +354,11 @@ function sol_render_export_page(): void {
 }
  
 function sol_export_survey_csv(): void {
-    $source_options = sol_get_enrollment_source_options();
-    $age_options    = sol_get_age_group_options();
-    $users          = get_users( array( 'fields' => array( 'ID', 'user_login', 'user_email', 'display_name', 'user_registered' ) ) );
+    $source_options             = sol_get_enrollment_source_options();
+    $age_options                = sol_get_age_group_options();
+    $interest_primary_options   = sol_get_interest_options();
+    $interest_secondary_options = sol_get_interest_secondary_options();
+    $users                      = get_users( array( 'fields' => array( 'ID', 'user_login', 'user_email', 'display_name', 'user_registered' ) ) );
  
     header( 'Content-Type: text/csv; charset=UTF-8' );
     header( 'Content-Disposition: attachment; filename="enrollment_survey_' . date('Ymd') . '.csv"' );
@@ -221,7 +368,7 @@ function sol_export_survey_csv(): void {
     $output = fopen( 'php://output', 'w' );
     fwrite( $output, "\xEF\xBB\xBF" );
  
-    fputcsv( $output, array( 'ユーザーID', 'ユーザー名', 'メールアドレス', '表示名', '登録日', '入会のきっかけ', '年代', '最終ログイン日時' ) );
+    fputcsv( $output, array( 'ユーザーID', 'ユーザー名', 'メールアドレス', '表示名', '登録日', '入会のきっかけ', '年代', '興味のある分野（1番目）', '興味のある分野（2番目）', '最終ログイン日時' ) );
  
     foreach ( $users as $user ) {
         $source      = get_user_meta( $user->ID, 'enrollment_source', true );
@@ -229,6 +376,12 @@ function sol_export_survey_csv(): void {
  
         $age_group   = get_user_meta( $user->ID, 'sol_age_group', true );
         $age_disp    = $age_options[ $age_group ] ?? ( $age_group ? $age_group : '未回答' );
+ 
+        $interest_primary        = get_user_meta( $user->ID, 'interest_primary', true );
+        $interest_primary_disp   = $interest_primary_options[ $interest_primary ] ?? ( $interest_primary ? $interest_primary : '未回答' );
+ 
+        $interest_secondary      = get_user_meta( $user->ID, 'interest_secondary', true );
+        $interest_secondary_disp = $interest_secondary_options[ $interest_secondary ] ?? ( $interest_secondary ? $interest_secondary : '未回答' );
  
         $last_login     = get_user_meta( $user->ID, 'sol_last_login', true );
         $last_login_fmt = $last_login ? date_i18n( 'Y-m-d H:i', strtotime( $last_login ) ) : '未記録';
@@ -241,6 +394,8 @@ function sol_export_survey_csv(): void {
             $user->user_registered,
             $source_disp,
             $age_disp,
+            $interest_primary_disp,
+            $interest_secondary_disp,
             $last_login_fmt,
         ) );
     }
@@ -1798,40 +1953,75 @@ add_filter( 'the_content', 'do_shortcode' );
 
 /**
  * ============================================================
- * 9. ダッシュボード左メニューに「操作説明書」を追加
- *    コンテンツエリアに固定ページの内容を表示
+ * 9. マイページ（ダッシュボード）サイドメニューの下に
+ *    「ユーザーマニュアル」への案内ボックスを追加
  * ============================================================
+ * サイドナビ（nav.llms-sd-nav）の罫線の外側・下に、
+ * 独立した別枠のリンクボックスを追加します。
+ * ※ nav自体はCSS Gridの "nav" エリアに配置されているため、
+ *   兄弟要素として追加すると位置がずれる可能性があるため、
+ *   nav内部に追加しつつ position:absolute で罫線の外に
+ *   はみ出させる方式にしています。
  */
 
-// エンドポイント登録
-add_action( 'init', 'sol_register_manual_endpoint' );
-function sol_register_manual_endpoint(): void {
-    add_rewrite_endpoint( 'sol-manual', EP_PAGES );
-}
+define( 'SOL_USER_MANUAL_URL', 'https://switchonlab.online/user_manual/' );
 
-// タブ追加
-add_filter( 'llms_get_student_dashboard_tabs', 'sol_add_manual_tab' );
-function sol_add_manual_tab( array $tabs ): array {
-    $tabs['sol-manual'] = array(
-        'endpoint' => 'sol-manual',
-        'title'    => 'ユーザーマニュアル',
-        'nav_item' => true,
-    );
-    return $tabs;
-}
+add_action( 'wp_footer', 'sol_add_user_manual_nav_box', 25 );
 
-// コンテンツ表示（固定ページの内容を読み込み）
-add_action( 'lifterlms_student_dashboard_sol-manual', 'sol_render_manual_content' );
-function sol_render_manual_content(): void {
-    // ▼ ユーザーマニュアルの固定ページスラッグを指定 ▼
-    $page_slug = 'user_manual';
-
-    $page = get_page_by_path( $page_slug );
-    if ( $page ) {
-        echo '<div class="sol-manual-content">';
-        echo wp_kses_post( apply_filters( 'the_content', $page->post_content ) );
-        echo '</div>';
-    } else {
-        echo '<p>ユーザーマニュアルページが見つかりません。（固定ページスラッグ: ' . esc_html( $page_slug ) . '）</p>';
+function sol_add_user_manual_nav_box(): void {
+    if ( ! function_exists( 'is_llms_account_page' ) ) return;
+    if ( ! is_llms_account_page() )                    return;
+    if ( ! is_user_logged_in() )                       return;
+    ?>
+    <style>
+    .llms-sd-nav {
+        position: relative; /* 下の別枠ボックスの基準位置にするため */
     }
+    .sol-user-manual-box {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        margin-top: 16px;
+        background: #fff;
+        border: 1px solid #cdeaea;
+        border-radius: 14px;
+        padding: 14px 16px;
+        box-sizing: border-box;
+        z-index: 2;
+    }
+    .sol-user-manual-box a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 700;
+        color: #1ab3b3;
+        text-decoration: none;
+    }
+    .sol-user-manual-box a:hover { color: #FF6B00; }
+
+    /* スマホ表示（サイドナビがドロップダウン化される幅）ではGridの位置合わせが崩れやすいため、通常の並びに戻す */
+    @media (max-width: 782px) {
+        .sol-user-manual-box {
+            position: static;
+            margin: 16px 0 0;
+        }
+    }
+    </style>
+    <script>
+    (function () {
+        var nav = document.querySelector( '.llms-sd-nav' );
+        if ( ! nav ) return;
+        if ( nav.querySelector( '.sol-user-manual-box' ) ) return; // 二重追加防止
+
+        var box = document.createElement( 'div' );
+        box.className = 'sol-user-manual-box';
+        box.innerHTML =
+            '<a href="<?php echo esc_url( SOL_USER_MANUAL_URL ); ?>">📘 <span>ユーザーマニュアル</span></a>';
+
+        nav.appendChild( box );
+    })();
+    </script>
+    <?php
 }
