@@ -2025,3 +2025,22 @@ function sol_add_user_manual_nav_box(): void {
     </script>
     <?php
 }
+
+
+/**
+ * 10. AIティーチャーシリーズ(Python/HTML/CSS)のレッスン画面で
+ * タイトル・戻るボタン・お気に入りハートを非表示にするためのbodyクラス付与
+ */
+add_filter('body_class', function($classes) {
+    if (function_exists('llms_get_post') && is_singular('lesson')) {
+        $lesson = llms_get_post(get_the_ID());
+        $course = $lesson ? $lesson->get_course() : null;
+
+        $target_course_ids = [8078, 8438, 8683]; // Python / HTML / CSS
+
+        if ($course && in_array($course->get('id'), $target_course_ids)) {
+            $classes[] = 'sol-ai-teacher-hidden-ui';
+        }
+    }
+    return $classes;
+});
